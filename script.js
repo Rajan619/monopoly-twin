@@ -10,224 +10,248 @@ let previousGray = null;
 let visionReady = false;
 
 const BOARD_SIZE = 1000;
-const FRAME_DELAY = 100; // ms ~10fps
-
+const FRAME_DELAY = 120;
 
 function logMsg(msg){
-    console.log(msg);
-    log.innerText = msg + "\n" + log.innerText;
+console.log(msg);
+log.innerText = msg + "\n" + log.innerText;
 }
 
+function initOpenCV(){
 
-function waitForOpenCV(){
+if(typeof cv === "undefined"){
+logMsg("Waiting for OpenCV script...");
+setTimeout(initOpenCV,200);
+return;
+}
 
-    if(typeof cv !== "undefined"){
-        visionReady = true;
-        status.innerText = "OpenCV Ready";
-        logMsg("OpenCV loaded");
-    }else{
-        setTimeout(waitForOpenCV,200);
-    }
+logMsg("OpenCV detected, waiting runtime");
+
+cv.onRuntimeInitialized = () => {
+
+visionReady = true;
+status.innerText="OpenCV Ready";
+
+logMsg("OpenCV runtime initialized");
+
+};
 
 }
 
-waitForOpenCV();
+initOpenCV();
 
 
 startBtn.onclick = async function(){
 
-    if(!visionReady){
-        alert("OpenCV not ready yet");
-        return;
-    }
+if(!visionReady){
+alert("OpenCV still loading");
+return;
+}
 
-    logMsg("Requesting camera...");
+logMsg("Requesting camera");
 
-    try{
+try{
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video:{
-                facingMode:"environment",
-                width:{ideal:640},
-                height:{ideal:640}
-            }
-        });
+const stream = await navigator.mediaDevices.getUserMedia({
+video:{
+facingMode:"environment",
+width:{ideal:640},
+height:{ideal:640}
+}
+});
 
-        video.srcObject = stream;
+video.srcObject = stream;
 
-        video.onloadedmetadata = ()=>{
+video.onloadedmetadata = ()=>{
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
 
-            logMsg("Camera started");
-            status.innerText = "Camera running";
+status.innerText="Camera running";
 
-            setTimeout(processFrame, FRAME_DELAY);
-        };
+logMsg("Camera started");
 
-    }catch(e){
+setTimeout(processFrame,FRAME_DELAY);
 
-        logMsg("Camera error: "+e);
-    }
+};
+
+}catch(e){
+
+logMsg("Camera error "+e);
+
+}
 
 };
 
 
-function detectBoard(src){
+function detectMotion(gray){
 
-    try{
+if(previousGray==null){
 
-        let dictionary = new cv.aruco_Dictionary(cv.DICT_4X4_50);
-        let parameters = new cv.aruco_DetectorParameters();
+previousGray = gray.clone();
+return false;
 
-        let markerCorners = new cv.MatVector();
-        let markerIds = new cv.Mat();
+}
 
-        cv.aruco.detectMarkers(src, dictionary, markerCorners, markerIds, parameters);
+let diff = new cv.Mat();
 
-        logMsg("Markers detected: "+markerIds.rows);
+cv.absdiff(gray,previousGray,diff);
 
-        if(markerIds.rows < 4){
-            markerCorners.delete();
-            markerIds.delete();
-            return null;
-        }
+let motionLevel = cv.mean(diff)[0];
 
-        let boardCorners = {};
+previousGray.delete();
+previousGray = gray.clone();
 
-        for(let i=0;i<markerIds.rows;i++){
+diff.delete();
 
-            let id = markerIds.intAt(i,0);
-            let corner = markerCorners.get(i);
+logMsg("Motion "+motionLevel.toFixed(2));
 
-            let x = corner.data32F[0];
-            let y = corner.data32F[1];
+return motionLevel>10;
 
-            logMsg("Marker "+id+" at "+x+","+y);
-
-            boardCorners[id] = [x,y];
-        }
-
-        markerCorners.delete();
-        markerIds.delete();
-
-        if(
-            boardCorners[0] &&
-            boardCorners[1] &&
-            boardCorners[2] &&
-            boardCorners[3]
-        ){
-
-            logMsg("All four markers detected");
-
-            let srcTri = cv.matFromArray(4,1,cv.CV_32FC2,[
-                boardCorners[0][0],boardCorners[0][1],
-                boardCorners[1][0],boardCorners[1][1],
-                boardCorners[2][0],boardCorners[2][1],
-                boardCorners[3][0],boardCorners[3][1]
-            ]);
-
-            let dstTri = cv.matFromArray(4,1,cv.CV_32FC2,[
-                0,0,
-                BOARD_SIZE,0,
-                BOARD_SIZE,BOARD_SIZE,
-                0,BOARD_SIZE
-            ]);
-
-            let M = cv.getPerspectiveTransform(srcTri,dstTri);
-
-            let warped = new cv.Mat();
-
-            cv.warpPerspective(src, warped, M, new cv.Size(BOARD_SIZE,BOARD_SIZE));
-
-            logMsg("Board warp successful");
-
-            srcTri.delete();
-            dstTri.delete();
-            M.delete();
-
-            return warped;
-        }
-
-    }catch(err){
-
-        logMsg("Board detection error: "+err);
-
-    }
-
-    return null;
 }
 
 
-function detectMotion(gray){
+function detectBoard(src){
 
-    if(previousGray == null){
+try{
 
-        previousGray = gray.clone();
-        return false;
-    }
+let dictionary = new cv.aruco_Dictionary(cv.DICT_4X4_50);
+let parameters = new cv.aruco_DetectorParameters();
 
-    let diff = new cv.Mat();
+let markerCorners = new cv.MatVector();
+let markerIds = new cv.Mat();
 
-    cv.absdiff(gray, previousGray, diff);
+cv.aruco.detectMarkers(src,dictionary,markerCorners,markerIds,parameters);
 
-    let motionLevel = cv.mean(diff)[0];
+logMsg("Markers detected "+markerIds.rows);
 
-    diff.delete();
+if(markerIds.rows<4){
 
-    previousGray.delete();
-    previousGray = gray.clone();
+markerCorners.delete();
+markerIds.delete();
 
-    logMsg("Motion level: "+motionLevel.toFixed(2));
+return null;
 
-    return motionLevel > 10;
+}
+
+let boardCorners={};
+
+for(let i=0;i<markerIds.rows;i++){
+
+let id = markerIds.intAt(i,0);
+let corner = markerCorners.get(i);
+
+let x = corner.data32F[0];
+let y = corner.data32F[1];
+
+boardCorners[id]=[x,y];
+
+logMsg("Marker "+id+" "+x+","+y);
+
+}
+
+markerCorners.delete();
+markerIds.delete();
+
+if(boardCorners[0]&&boardCorners[1]&&boardCorners[2]&&boardCorners[3]){
+
+logMsg("All four markers visible");
+
+let srcTri = cv.matFromArray(4,1,cv.CV_32FC2,[
+
+boardCorners[0][0],boardCorners[0][1],
+boardCorners[1][0],boardCorners[1][1],
+boardCorners[2][0],boardCorners[2][1],
+boardCorners[3][0],boardCorners[3][1]
+
+]);
+
+let dstTri = cv.matFromArray(4,1,cv.CV_32FC2,[
+
+0,0,
+BOARD_SIZE,0,
+BOARD_SIZE,BOARD_SIZE,
+0,BOARD_SIZE
+
+]);
+
+let M = cv.getPerspectiveTransform(srcTri,dstTri);
+
+let warped = new cv.Mat();
+
+cv.warpPerspective(src,warped,M,new cv.Size(BOARD_SIZE,BOARD_SIZE));
+
+srcTri.delete();
+dstTri.delete();
+M.delete();
+
+logMsg("Board warp success");
+
+return warped;
+
+}
+
+}catch(err){
+
+logMsg("Board detection error "+err);
+
+}
+
+return null;
+
 }
 
 
 function processFrame(){
 
-    try{
+try{
 
-        ctx.drawImage(video,0,0,canvas.width,canvas.height);
+ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-        let src = cv.imread(canvas);
+let src = cv.imread(canvas);
 
-        let gray = new cv.Mat();
-        cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+let gray = new cv.Mat();
 
-        let moving = detectMotion(gray);
+cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
 
-        if(moving){
-            status.innerText = "Motion detected";
-        }else{
-            status.innerText = "Board stable";
-        }
+let moving = detectMotion(gray);
 
-        let board = detectBoard(src);
+if(moving){
 
-        if(board){
+status.innerText="Motion detected";
 
-            logMsg("Board detected");
+}else{
 
-            let display = new cv.Mat();
+status.innerText="Board stable";
 
-            cv.resize(board,display,new cv.Size(canvas.width,canvas.height));
+}
 
-            cv.imshow(canvas,display);
+let board = detectBoard(src);
 
-            display.delete();
-            board.delete();
-        }
+if(board){
 
-        src.delete();
-        gray.delete();
+let display = new cv.Mat();
 
-    }catch(err){
+cv.resize(board,display,new cv.Size(canvas.width,canvas.height));
 
-        logMsg("Frame error: "+err);
+cv.imshow(canvas,display);
 
-    }
+display.delete();
+board.delete();
 
-    setTimeout(processFrame, FRAME_DELAY);
+status.innerText+=" | Board detected";
+
+}
+
+src.delete();
+gray.delete();
+
+}catch(err){
+
+logMsg("Frame error "+err);
+
+}
+
+setTimeout(processFrame,FRAME_DELAY);
+
 }
