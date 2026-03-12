@@ -1,74 +1,120 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Monopoly Twin - Calibrate</title>
-    <script src="https://docs.opencv.org/4.10.0/opencv.js" type="text/javascript"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Monopoly Twin Mobile</title>
+    <script async src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.min.js" type="text/javascript"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; text-align: center; }
-        video, canvas { width: 95%; max-width: 450px; border: 2px solid #555; border-radius: 10px; margin-top: 10px; }
-        .btn { background: #008CBA; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 10px; }
-        #instructions { color: #ffeb3b; font-weight: bold; margin: 10px; }
+        body { 
+            font-family: sans-serif; background: #121212; color: white; 
+            margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center;
+        }
+        #status { 
+            width: 90%; padding: 10px; margin: 5px 0; border-radius: 8px; 
+            background: #333; font-size: 13px; color: #ffeb3b; text-align: center;
+        }
+        .view-container { width: 100%; max-width: 400px; position: relative; }
+        video, canvas { 
+            width: 100%; aspect-ratio: 4/3; background: #000; 
+            border: 2px solid #444; border-radius: 12px; display: block; margin-top: 5px;
+        }
+        canvas { aspect-ratio: 1/1; border-color: #4CAF50; } /* Digital Twin is Square */
+        
+        .btn { 
+            background: #4CAF50; color: white; padding: 15px 30px; border: none; 
+            border-radius: 50px; font-size: 16px; font-weight: bold; 
+            margin: 10px 0; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        h3 { font-size: 14px; margin: 15px 0 5px 0; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .reset-btn { background: #555; font-size: 12px; padding: 8px 15px; margin-top: 5px; }
     </style>
 </head>
 <body>
-    <div id="instructions">Tap the 4 corners of the board in the top view</div>
-    <video id="videoInput" playsinline></video>
-    <canvas id="canvasOutput"></canvas>
-    <button class="btn" onclick="resetPoints()">Reset Corners</button>
+
+    <div id="status">Initializing OpenCV...</div>
+    
+    <button id="startBtn" class="btn" style="display: none;">START CAMERA</button>
+
+    <h3>1. Bangalore Live Feed</h3>
+    <div class="view-container">
+        <video id="videoInput" playsinline></video>
+    </div>
+    <button class="btn reset-btn" onclick="resetPoints()">Reset Calibration</button>
+
+    <h3>2. Digital Twin (Warped)</h3>
+    <div class="view-container">
+        <canvas id="canvasOutput"></canvas>
+    </div>
 
     <script type="text/javascript">
         let points = [];
+        const status = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
         const video = document.getElementById('videoInput');
-        const instructions = document.getElementById('instructions');
+        const canvas = document.getElementById('canvasOutput');
 
+        // 1. Wait for OpenCV
+        let checkCV = setInterval(() => {
+            if (typeof cv !== 'undefined' && cv.Mat) {
+                clearInterval(checkCV);
+                status.innerHTML = "OpenCV Loaded. Tap Start.";
+                startBtn.style.display = "block";
+            }
+        }, 500);
+
+        // 2. Start Camera with specific 9:16 considerations
+        startBtn.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } } 
+                });
+                video.srcObject = stream;
+                await video.play();
+                startBtn.style.display = "none";
+                status.innerHTML = "TAP 4 CORNERS ON TOP FEED (TL, TR, BR, BL)";
+                startProcessing();
+            } catch (err) {
+                status.innerHTML = "Camera Error: " + err.message;
+            }
+        };
+
+        // 3. Calibration Input
         video.addEventListener('click', (e) => {
-            if (points.length < 4) {
+            if (points.length < 8) {
                 const rect = video.getBoundingClientRect();
                 const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
                 const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
                 points.push(x, y);
-                if (points.length === 8) instructions.innerText = "Board Locked! Look at Digital Twin below.";
+                
+                status.innerHTML = `Points: ${points.length/2} / 4`;
+                if (points.length === 8) status.innerHTML = "BOARD SYNCED ✅";
             }
         });
 
-        function resetPoints() { points = []; instructions.innerText = "Tap the 4 corners of the board"; }
-
-        function onOpenCvReady() {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                .then(stream => { video.srcObject = stream; video.play(); startCV(); });
+        function resetPoints() { 
+            points = []; 
+            status.innerHTML = "TAP 4 CORNERS ON TOP FEED"; 
         }
 
-        function startCV() {
-            let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
-            let dst = new cv.Mat(500, 500, cv.CV_8UC4);
-            let cap = new cv.VideoCapture(video);
+        // 4. Core OpenCV Loop
+        function startProcessing() {
+            const src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+            const dst = new cv.Mat(500, 500, cv.CV_8UC4);
+            const cap = new cv.VideoCapture(video);
 
             function process() {
-                cap.read(src);
-                if (points.length === 8) {
-                    let srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, points);
-                    let dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [0,0, 500,0, 500,500, 0,500]);
-                    let M = cv.getPerspectiveTransform(srcCoords, dstCoords);
-                    cv.warpPerspective(src, dst, M, new cv.Size(500, 500));
+                try {
+                    cap.read(src);
                     
-                    // Add Pawn Tracking (Blue)
-                    let hsv = new cv.Mat();
-                    cv.cvtColor(dst, hsv, cv.COLOR_RGBA2RGB);
-                    cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
-                    let lowBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [100, 150, 50, 0]);
-                    let highBlue = new cv.Mat(dst.rows, dst.cols, dst.type(), [140, 255, 255, 255]);
-                    let mask = new cv.Mat();
-                    cv.inRange(hsv, lowBlue, highBlue, mask);
-                    // ... (finding contours and drawing rectangle on dst) ...
-                    
-                    cv.imshow('canvasOutput', dst);
-                    M.delete(); srcCoords.delete(); dstCoords.delete(); hsv.delete(); mask.delete();
-                }
-                requestAnimationFrame(process);
-            }
-            requestAnimationFrame(process);
-        }
-        var Module = { onRuntimeInitialized: onOpenCvReady };
-    </script>
-</body>
-</html>
+                    if (points.length === 8) {
+                        // Perspective Warp
+                        let srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, points);
+                        let dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [0,0, 500,0, 500,500, 0,500]);
+                        let M = cv.getPerspectiveTransform(srcCoords, dstCoords);
+                        cv.warpPerspective(src, dst, M, new cv.Size(500, 500));
+                        
+                        // Draw a subtle grid for verification
+                        for(let i=0; i<=10; i++){
+                            let p = i * 50;
+                            cv.line(dst, new cv.Point(p, 0), new cv.Point(p, 500), [255,255,255,50], 1
