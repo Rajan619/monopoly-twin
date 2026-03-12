@@ -1,106 +1,181 @@
-<!DOCTYPE html>
 
+<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>Monopoly Digital Twin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
 
 <style>
-body{
-    background:#111;
-    color:white;
-    font-family:monospace;
-    text-align:center;
-}
-video, canvas{
-    border:1px solid #444;
-    margin:5px;
-}
-</style>
 
+body{
+background:#111;
+color:white;
+font-family:monospace;
+margin:0;
+text-align:center;
+}
+
+#container{
+display:flex;
+flex-direction:column;
+align-items:center;
+padding:10px;
+}
+
+video{
+width:95vw;
+max-width:480px;
+border:2px solid #444;
+border-radius:6px;
+margin-bottom:10px;
+}
+
+canvas{
+width:95vw;
+max-width:480px;
+border:2px solid #444;
+border-radius:6px;
+margin-bottom:10px;
+}
+
+button{
+padding:12px 20px;
+font-size:16px;
+border-radius:6px;
+border:none;
+background:#2ecc71;
+color:white;
+margin:10px;
+}
+
+#logs{
+width:95vw;
+max-width:480px;
+height:120px;
+background:black;
+color:#00ff9c;
+overflow-y:auto;
+font-size:12px;
+padding:8px;
+border:1px solid #333;
+text-align:left;
+}
+
+</style>
 </head>
 
 <body>
 
-<h2>Monopoly Digital Twin</h2>
+<div id="container">
 
-<video id="video" width="640" height="480" autoplay playsinline></video> <br>
+<h3>Monopoly Digital Twin</h3>
 
-<canvas id="canvasOutput" width="640" height="480"></canvas> <br>
+<button id="startBtn" disabled>Loading OpenCV...</button>
+
+<video id="video" autoplay playsinline></video>
+
+<canvas id="canvasOutput" width="640" height="480"></canvas>
 
 <canvas id="warpedCanvas" width="500" height="500"></canvas>
 
-<p id="status">Loading OpenCV...</p>
+<div id="logs"></div>
+
+</div>
 
 <script>
 
-let video = document.getElementById("video");
-let canvasOutput = document.getElementById("canvasOutput");
-let ctx = canvasOutput.getContext("2d");
+let video=document.getElementById("video");
+let startBtn=document.getElementById("startBtn");
+let logs=document.getElementById("logs");
 
-let warpedCanvas = document.getElementById("warpedCanvas");
-let warpedCtx = warpedCanvas.getContext("2d");
+function log(msg){
+console.log(msg);
+logs.innerHTML+=msg+"<br>";
+logs.scrollTop=logs.scrollHeight;
+}
 
-let streaming = false;
+let streaming=false;
+let cap,frame,gray,warped,hsv,mask,contours,hierarchy;
+
+function startCamera(){
+
+log("Starting camera...");
 
 navigator.mediaDevices.getUserMedia({
-    video:{
-        facingMode:"environment",
-        width:1280,
-        height:720
-    },
-    audio:false
-}).then(function(stream){
-    video.srcObject = stream;
-    video.play();
-});
+video:{
+facingMode:{ideal:"environment"},
+width:{ideal:1280},
+height:{ideal:720}
+},
+audio:false
+})
+.then(function(stream){
 
-video.addEventListener("canplay", function(){
-    if(!streaming){
-        streaming = true;
-    }
-}, false);
+video.srcObject=stream;
+video.play();
 
-function startCV(){
+video.onloadedmetadata=function(){
 
-let cap = new cv.VideoCapture(video);
+log("Camera ready");
 
-let frame = new cv.Mat(video.height, video.width, cv.CV_8UC4);
-let gray = new cv.Mat();
+startVision();
 
-let warped = new cv.Mat(500,500,cv.CV_8UC4);
+};
 
-let hsv = new cv.Mat();
-let mask = new cv.Mat();
+})
+.catch(err=>log("Camera error: "+err));
 
-let contours = new cv.MatVector();
-let hierarchy = new cv.Mat();
+}
 
-let dictionary = new cv.aruco_Dictionary(cv.DICT_4X4_50);
-let parameters = new cv.aruco_DetectorParameters();
+function startVision(){
 
-let corners = new cv.MatVector();
-let ids = new cv.Mat();
+log("Starting vision pipeline");
+
+cap=new cv.VideoCapture(video);
+
+frame=new cv.Mat(video.videoHeight,video.videoWidth,cv.CV_8UC4);
+gray=new cv.Mat();
+
+warped=new cv.Mat(500,500,cv.CV_8UC4);
+
+hsv=new cv.Mat();
+mask=new cv.Mat();
+
+contours=new cv.MatVector();
+hierarchy=new cv.Mat();
+
+dictionary=new cv.aruco_Dictionary(cv.DICT_4X4_50);
+parameters=new cv.aruco_DetectorParameters();
+
+corners=new cv.MatVector();
+ids=new cv.Mat();
+
+process();
+
+}
 
 function process(){
 
+try{
+
 cap.read(frame);
 
-cv.cvtColor(frame, gray, cv.COLOR_RGBA2GRAY);
+cv.cvtColor(frame,gray,cv.COLOR_RGBA2GRAY);
 
-cv.aruco.detectMarkers(gray, dictionary, corners, ids, parameters);
+cv.aruco.detectMarkers(gray,dictionary,corners,ids,parameters);
 
-let boardCorners = {};
+let boardCorners={};
 
-if(ids.rows >= 4){
+if(ids.rows>=4){
 
 for(let i=0;i<ids.rows;i++){
 
-let id = ids.intAt(i,0);
-let marker = corners.get(i);
-let d = marker.data32F;
+let id=ids.intAt(i,0);
+let marker=corners.get(i);
+let d=marker.data32F;
 
 if(id===0) boardCorners.tl=[d[0],d[1]];
 if(id===1) boardCorners.tr=[d[2],d[3]];
@@ -111,21 +186,21 @@ if(id===3) boardCorners.bl=[d[6],d[7]];
 
 if(boardCorners.tl && boardCorners.tr && boardCorners.br && boardCorners.bl){
 
-let src = cv.matFromArray(4,1,cv.CV_32FC2,[
+let src=cv.matFromArray(4,1,cv.CV_32FC2,[
 boardCorners.tl[0],boardCorners.tl[1],
 boardCorners.tr[0],boardCorners.tr[1],
 boardCorners.br[0],boardCorners.br[1],
 boardCorners.bl[0],boardCorners.bl[1]
 ]);
 
-let dst = cv.matFromArray(4,1,cv.CV_32FC2,[
+let dst=cv.matFromArray(4,1,cv.CV_32FC2,[
 0,0,
 500,0,
 500,500,
 0,500
 ]);
 
-let M = cv.getPerspectiveTransform(src,dst);
+let M=cv.getPerspectiveTransform(src,dst);
 
 cv.warpPerspective(frame,warped,M,new cv.Size(500,500));
 
@@ -133,8 +208,8 @@ cv.imshow("warpedCanvas",warped);
 
 cv.cvtColor(warped,hsv,cv.COLOR_RGBA2HSV);
 
-let lower = new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[100,120,50,0]);
-let upper = new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[140,255,255,255]);
+let lower=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[100,120,50,0]);
+let upper=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[140,255,255,255]);
 
 cv.inRange(hsv,lower,upper,mask);
 
@@ -142,15 +217,17 @@ cv.findContours(mask,contours,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE)
 
 if(contours.size()>0){
 
-let cnt = contours.get(0);
-let rect = cv.boundingRect(cnt);
+let cnt=contours.get(0);
+let rect=cv.boundingRect(cnt);
 
-let cx = rect.x + rect.width/2;
-let cy = rect.y + rect.height/2;
+let cx=rect.x+rect.width/2;
+let cy=rect.y+rect.height/2;
 
-warpedCtx.strokeStyle="cyan";
-warpedCtx.lineWidth=3;
-warpedCtx.strokeRect(rect.x,rect.y,rect.width,rect.height);
+let ctx=document.getElementById("warpedCanvas").getContext("2d");
+
+ctx.strokeStyle="cyan";
+ctx.lineWidth=3;
+ctx.strokeRect(rect.x,rect.y,rect.width,rect.height);
 
 let square=-1;
 
@@ -159,8 +236,7 @@ else if(cx<50) square=10+Math.floor((500-cy)/50);
 else if(cy<50) square=20+Math.floor(cx/50);
 else if(cx>450) square=30+Math.floor(cy/50);
 
-document.getElementById("status").innerText=
-"Pawn: "+cx.toFixed(0)+","+cy.toFixed(0)+" | Square: "+square;
+log("Pawn "+cx.toFixed(0)+","+cy.toFixed(0)+" square:"+square);
 
 }
 
@@ -174,18 +250,26 @@ M.delete();
 
 cv.imshow("canvasOutput",frame);
 
+}catch(e){
+
+log("Vision error: "+e);
+
+}
+
 requestAnimationFrame(process);
 
 }
 
-process();
-
-}
-
 cv["onRuntimeInitialized"]=()=>{
-document.getElementById("status").innerText="OpenCV ready";
-startCV();
+
+log("OpenCV loaded");
+
+startBtn.disabled=false;
+startBtn.innerText="Start Camera";
+
 };
+
+startBtn.onclick=startCamera;
 
 </script>
 
