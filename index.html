@@ -3,7 +3,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Monopoly Digital Twin - Stable Mobile Version</title>
+<title>Monopoly Digital Twin - Mobile Stable v3</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js"></script>
@@ -45,7 +45,7 @@ margin:6px;
 #logs{
 width:95vw;
 max-width:480px;
-height:140px;
+height:150px;
 background:black;
 color:#00ff9c;
 overflow-y:auto;
@@ -68,14 +68,16 @@ margin-bottom:6px;
 
 <h3>Monopoly Digital Twin</h3>
 
-<div id="instructions">Tap START CAMERA. Then tap the 4 board corners (TL → TR → BR → BL).</div>
+<div id="instructions">
+Tap START CAMERA → tap board corners (TL → TR → BR → BL)
+</div>
 
 <button id="startBtn" disabled>Loading OpenCV...</button>
 <button id="resetBtn">Reset Calibration</button>
 
-<video id="video" autoplay playsinline></video>
+<video id="video" autoplay playsinline muted></video>
 
-<canvas id="canvasOutput" width="640" height="480"></canvas>
+<canvas id="canvasOutput"></canvas>
 <canvas id="warpedCanvas" width="500" height="500"></canvas>
 
 <div id="logs"></div>
@@ -88,6 +90,7 @@ let video=document.getElementById("video")
 let startBtn=document.getElementById("startBtn")
 let resetBtn=document.getElementById("resetBtn")
 let logs=document.getElementById("logs")
+let canvasOutput=document.getElementById("canvasOutput")
 
 function log(msg){
 console.log(msg)
@@ -105,13 +108,14 @@ startBtn.disabled=false
 startBtn.innerText="Start Camera"
 }
 
-if(cv.getBuildInformation){
+if(typeof cv!=="undefined" && cv.getBuildInformation){
 onOpenCvReady()
 }else{
 cv["onRuntimeInitialized"]=onOpenCvReady
 }
 
 startBtn.onclick=startCamera
+
 resetBtn.onclick=()=>{
 localStorage.removeItem("boardHomography")
 location.reload()
@@ -133,6 +137,11 @@ video.onloadedmetadata=()=>{
 
 log("Camera ready")
 
+canvasOutput.width=video.videoWidth
+canvasOutput.height=video.videoHeight
+
+log("Video size "+video.videoWidth+"x"+video.videoHeight)
+
 initVision()
 
 }
@@ -145,7 +154,8 @@ function initVision(){
 
 cap=new cv.VideoCapture(video)
 
-frame=new cv.Mat(video.videoHeight,video.videoWidth,cv.CV_8UC4)
+frame=new cv.Mat(canvasOutput.height,canvasOutput.width,cv.CV_8UC4)
+
 warped=new cv.Mat(500,500,cv.CV_8UC4)
 
 hsv=new cv.Mat()
@@ -157,8 +167,10 @@ hierarchy=new cv.Mat()
 let stored=localStorage.getItem("boardHomography")
 
 if(stored){
+
 homography=cv.matFromArray(3,3,cv.CV_64F,JSON.parse(stored))
 log("Loaded saved calibration")
+
 }
 
 process()
@@ -261,7 +273,9 @@ log("Pawn "+cx.toFixed(0)+","+cy.toFixed(0)+" square:"+square)
 cv.imshow("canvasOutput",frame)
 
 }catch(e){
+
 log("Vision error "+e)
+
 }
 
 requestAnimationFrame(process)
