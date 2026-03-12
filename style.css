@@ -34,4 +34,7 @@ margin-top:10px;
 font-size:12px;
 color:#0f0;
 white-space:pre-wrap;
+text-align:left;
+max-width:480px;
+margin:auto;
 }
