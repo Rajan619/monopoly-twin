@@ -27,7 +27,7 @@ margin:10px;
 }
 
 #log{
-color:#0f0;
+color:#00ff66;
 font-size:12px;
 white-space:pre-wrap;
 text-align:left;
@@ -46,12 +46,14 @@ margin:auto;
 
 <button onclick="startCamera()">Start Camera</button>
 
-<p id="status">Loading OpenCV...</p>
+<p id="status">Waiting...</p>
 
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 
 <div id="log"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/js-aruco@1.3.0/build/aruco.js"></script>
 
 <script>
 
@@ -62,46 +64,16 @@ let ctx = canvas.getContext("2d")
 let log = document.getElementById("log")
 let status = document.getElementById("status")
 
-let dictionary
-let parameters
+let detector = new AR.Detector()
 
 function logMsg(msg){
 console.log(msg)
 log.innerText = msg + "\n" + log.innerText
 }
 
-var Module = {
-
-onRuntimeInitialized() {
-
-status.innerText = "OpenCV Ready"
-
-logMsg("OpenCV runtime initialized")
-
-if(!cv.aruco){
-logMsg("ERROR: aruco module missing")
-return
-}
-
-logMsg("aruco module loaded")
-
-dictionary = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_4X4_50)
-parameters = new cv.aruco.DetectorParameters()
-
-}
-
-}
-
-</script>
-
-<!-- OpenCV build WITH contrib modules -->
-<script src="https://cdn.jsdelivr.net/npm/opencv-js@4.5.5/opencv.js"></script>
-
-<script>
-
 async function startCamera(){
 
-logMsg("Requesting camera")
+status.innerText = "Requesting camera..."
 
 const stream = await navigator.mediaDevices.getUserMedia({
 video:{facingMode:"environment"}
@@ -114,6 +86,8 @@ video.onloadedmetadata = ()=>{
 canvas.width = video.videoWidth
 canvas.height = video.videoHeight
 
+status.innerText = "Camera running"
+
 logMsg("Camera started")
 
 requestAnimationFrame(loop)
@@ -124,34 +98,35 @@ requestAnimationFrame(loop)
 
 function loop(){
 
-try{
-
 ctx.drawImage(video,0,0,canvas.width,canvas.height)
 
-let src = cv.imread(canvas)
+let imageData = ctx.getImageData(0,0,canvas.width,canvas.height)
 
-let markerCorners = new cv.MatVector()
-let markerIds = new cv.Mat()
+let markers = detector.detect(imageData)
 
-cv.aruco.detectMarkers(src,dictionary,markerCorners,markerIds,parameters)
+if(markers.length > 0){
 
-if(markerIds.rows > 0){
+logMsg("Markers detected: " + markers.length)
 
-logMsg("Markers detected: "+markerIds.rows)
+for(let m of markers){
 
-cv.aruco.drawDetectedMarkers(src,markerCorners,markerIds)
+logMsg("Marker ID: " + m.id)
 
+ctx.strokeStyle="lime"
+ctx.lineWidth=3
+
+ctx.beginPath()
+
+ctx.moveTo(m.corners[0].x,m.corners[0].y)
+
+for(let i=1;i<m.corners.length;i++){
+ctx.lineTo(m.corners[i].x,m.corners[i].y)
 }
 
-cv.imshow(canvas,src)
+ctx.closePath()
+ctx.stroke()
 
-src.delete()
-markerCorners.delete()
-markerIds.delete()
-
-}catch(err){
-
-logMsg("ERROR: "+err)
+}
 
 }
 
