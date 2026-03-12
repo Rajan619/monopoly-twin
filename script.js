@@ -10,110 +10,150 @@ let previousGray = null;
 let visionReady = false;
 
 const BOARD_SIZE = 1000;
+const FRAME_DELAY = 100; // ms ~10fps
+
 
 function logMsg(msg){
+    console.log(msg);
     log.innerText = msg + "\n" + log.innerText;
 }
 
+
 function waitForOpenCV(){
+
     if(typeof cv !== "undefined"){
-        status.innerText = "OpenCV Ready";
         visionReady = true;
+        status.innerText = "OpenCV Ready";
+        logMsg("OpenCV loaded");
     }else{
         setTimeout(waitForOpenCV,200);
     }
+
 }
 
 waitForOpenCV();
 
+
 startBtn.onclick = async function(){
 
     if(!visionReady){
-        alert("OpenCV still loading");
+        alert("OpenCV not ready yet");
         return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video:{
-            facingMode:"environment",
-            width:{ideal:640},
-            height:{ideal:640}
-        }
-    });
+    logMsg("Requesting camera...");
 
-    video.srcObject = stream;
+    try{
 
-    video.onloadedmetadata = ()=>{
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video:{
+                facingMode:"environment",
+                width:{ideal:640},
+                height:{ideal:640}
+            }
+        });
 
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        video.srcObject = stream;
 
-        status.innerText = "Camera running";
+        video.onloadedmetadata = ()=>{
 
-        requestAnimationFrame(processFrame);
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            logMsg("Camera started");
+            status.innerText = "Camera running";
+
+            setTimeout(processFrame, FRAME_DELAY);
+        };
+
+    }catch(e){
+
+        logMsg("Camera error: "+e);
     }
+
 };
 
 
 function detectBoard(src){
 
-    let dictionary = new cv.aruco_Dictionary(cv.DICT_4X4_50);
-    let parameters = new cv.aruco_DetectorParameters();
+    try{
 
-    let markerCorners = new cv.MatVector();
-    let markerIds = new cv.Mat();
+        let dictionary = new cv.aruco_Dictionary(cv.DICT_4X4_50);
+        let parameters = new cv.aruco_DetectorParameters();
 
-    cv.aruco.detectMarkers(src, dictionary, markerCorners, markerIds, parameters);
+        let markerCorners = new cv.MatVector();
+        let markerIds = new cv.Mat();
 
-    if(markerIds.rows < 4){
-        return null;
-    }
+        cv.aruco.detectMarkers(src, dictionary, markerCorners, markerIds, parameters);
 
-    let boardCorners = {};
+        logMsg("Markers detected: "+markerIds.rows);
 
-    for(let i=0;i<markerIds.rows;i++){
+        if(markerIds.rows < 4){
+            markerCorners.delete();
+            markerIds.delete();
+            return null;
+        }
 
-        let id = markerIds.intAt(i,0);
-        let corner = markerCorners.get(i);
+        let boardCorners = {};
 
-        let x = corner.data32F[0];
-        let y = corner.data32F[1];
+        for(let i=0;i<markerIds.rows;i++){
 
-        boardCorners[id] = [x,y];
-    }
+            let id = markerIds.intAt(i,0);
+            let corner = markerCorners.get(i);
 
-    if(
-        boardCorners[0] &&
-        boardCorners[1] &&
-        boardCorners[2] &&
-        boardCorners[3]
-    ){
+            let x = corner.data32F[0];
+            let y = corner.data32F[1];
 
-        let srcTri = cv.matFromArray(4,1,cv.CV_32FC2,[
-            boardCorners[0][0],boardCorners[0][1],
-            boardCorners[1][0],boardCorners[1][1],
-            boardCorners[2][0],boardCorners[2][1],
-            boardCorners[3][0],boardCorners[3][1]
-        ]);
+            logMsg("Marker "+id+" at "+x+","+y);
 
-        let dstTri = cv.matFromArray(4,1,cv.CV_32FC2,[
-            0,0,
-            BOARD_SIZE,0,
-            BOARD_SIZE,BOARD_SIZE,
-            0,BOARD_SIZE
-        ]);
+            boardCorners[id] = [x,y];
+        }
 
-        let M = cv.getPerspectiveTransform(srcTri,dstTri);
+        markerCorners.delete();
+        markerIds.delete();
 
-        let warped = new cv.Mat();
+        if(
+            boardCorners[0] &&
+            boardCorners[1] &&
+            boardCorners[2] &&
+            boardCorners[3]
+        ){
 
-        cv.warpPerspective(src, warped, M, new cv.Size(BOARD_SIZE,BOARD_SIZE));
+            logMsg("All four markers detected");
 
-        srcTri.delete();
-        dstTri.delete();
-        M.delete();
+            let srcTri = cv.matFromArray(4,1,cv.CV_32FC2,[
+                boardCorners[0][0],boardCorners[0][1],
+                boardCorners[1][0],boardCorners[1][1],
+                boardCorners[2][0],boardCorners[2][1],
+                boardCorners[3][0],boardCorners[3][1]
+            ]);
 
-        return warped;
+            let dstTri = cv.matFromArray(4,1,cv.CV_32FC2,[
+                0,0,
+                BOARD_SIZE,0,
+                BOARD_SIZE,BOARD_SIZE,
+                0,BOARD_SIZE
+            ]);
+
+            let M = cv.getPerspectiveTransform(srcTri,dstTri);
+
+            let warped = new cv.Mat();
+
+            cv.warpPerspective(src, warped, M, new cv.Size(BOARD_SIZE,BOARD_SIZE));
+
+            logMsg("Board warp successful");
+
+            srcTri.delete();
+            dstTri.delete();
+            M.delete();
+
+            return warped;
+        }
+
+    }catch(err){
+
+        logMsg("Board detection error: "+err);
+
     }
 
     return null;
@@ -123,6 +163,7 @@ function detectBoard(src){
 function detectMotion(gray){
 
     if(previousGray == null){
+
         previousGray = gray.clone();
         return false;
     }
@@ -138,45 +179,55 @@ function detectMotion(gray){
     previousGray.delete();
     previousGray = gray.clone();
 
+    logMsg("Motion level: "+motionLevel.toFixed(2));
+
     return motionLevel > 10;
 }
 
 
 function processFrame(){
 
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    try{
 
-    let src = cv.imread(canvas);
+        ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-    let gray = new cv.Mat();
-    cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+        let src = cv.imread(canvas);
 
-    let moving = detectMotion(gray);
+        let gray = new cv.Mat();
+        cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
 
-    if(moving){
-        status.innerText = "Motion detected (player moving pieces)";
-    }else{
-        status.innerText = "Board stable";
+        let moving = detectMotion(gray);
+
+        if(moving){
+            status.innerText = "Motion detected";
+        }else{
+            status.innerText = "Board stable";
+        }
+
+        let board = detectBoard(src);
+
+        if(board){
+
+            logMsg("Board detected");
+
+            let display = new cv.Mat();
+
+            cv.resize(board,display,new cv.Size(canvas.width,canvas.height));
+
+            cv.imshow(canvas,display);
+
+            display.delete();
+            board.delete();
+        }
+
+        src.delete();
+        gray.delete();
+
+    }catch(err){
+
+        logMsg("Frame error: "+err);
+
     }
 
-    let board = detectBoard(src);
-
-    if(board){
-
-        let display = new cv.Mat();
-
-        cv.resize(board,display,new cv.Size(canvas.width,canvas.height));
-
-        cv.imshow(canvas,display);
-
-        status.innerText += " | Board detected";
-
-        display.delete();
-        board.delete();
-    }
-
-    src.delete();
-    gray.delete();
-
-    requestAnimationFrame(processFrame);
+    setTimeout(processFrame, FRAME_DELAY);
 }
