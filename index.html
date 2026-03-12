@@ -117,4 +117,21 @@
                         // Draw a subtle grid for verification
                         for(let i=0; i<=10; i++){
                             let p = i * 50;
-                            cv.line(dst, new cv.Point(p, 0), new cv.Point(p, 500), [255,255,255,50], 1
+                            cv.line(dst, new cv.Point(p, 0), new cv.Point(p, 500), [255,255,255,50], 1);
+                            cv.line(dst, new cv.Point(0, p), new cv.Point(500, p), [255,255,255,50], 1);
+                        }
+
+                        cv.imshow('canvasOutput', dst);
+                        M.delete(); srcCoords.delete(); dstCoords.delete();
+                    } else {
+                        // Just show raw feed in canvas until calibrated
+                        cv.imshow('canvasOutput', src);
+                    }
+                } catch (e) { console.log(e); }
+                requestAnimationFrame(process);
+            }
+            requestAnimationFrame(process);
+        }
+    </script>
+</body>
+</html>
