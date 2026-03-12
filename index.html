@@ -3,41 +3,150 @@
 <head>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Monopoly Vision Tracker</title>
+<title>ArUco Detector</title>
 
-<link rel="stylesheet" href="style.css">
+<style>
+
+body{
+background:#111;
+color:white;
+text-align:center;
+font-family:Arial;
+}
+
+video,canvas{
+width:90%;
+max-width:500px;
+border-radius:10px;
+}
+
+button{
+padding:12px 20px;
+font-size:18px;
+margin:10px;
+}
+
+#log{
+color:#00ff66;
+font-size:12px;
+white-space:pre-wrap;
+text-align:left;
+width:90%;
+max-width:500px;
+margin:auto;
+}
+
+</style>
 
 </head>
 
 <body>
 
-<h2>Monopoly Vision Tracker</h2>
+<h2>ArUco Marker Detector</h2>
 
-<button id="startBtn">Start Camera</button>
+<button onclick="startCamera()">Start Camera</button>
 
-<div id="status">Loading OpenCV...</div>
-
-<div class="container">
+<p id="status">Loading OpenCV...</p>
 
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 
-</div>
-
 <div id="log"></div>
 
 <script>
+
+let video = document.getElementById("video")
+let canvas = document.getElementById("canvas")
+let ctx = canvas.getContext("2d")
+
+let log = document.getElementById("log")
+let status = document.getElementById("status")
+
+let dictionary
+let parameters
+
+function logMsg(msg){
+console.log(msg)
+log.innerText = msg + "\n" + log.innerText
+}
+
 var Module = {
-    onRuntimeInitialized() {
-        window.cvReady = true;
-        document.getElementById("status").innerText = "OpenCV Ready";
-        console.log("OpenCV runtime initialized");
-    }
-};
+onRuntimeInitialized() {
+
+status.innerText = "OpenCV Ready"
+
+dictionary = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_4X4_50)
+parameters = new cv.aruco.DetectorParameters()
+
+logMsg("OpenCV runtime initialized")
+
+}
+}
+
 </script>
 
 <script src="https://docs.opencv.org/4.x/opencv.js"></script>
-<script src="script.js"></script>
+
+<script>
+
+async function startCamera(){
+
+logMsg("Requesting camera")
+
+const stream = await navigator.mediaDevices.getUserMedia({
+video:{facingMode:"environment"}
+})
+
+video.srcObject = stream
+
+video.onloadedmetadata = ()=>{
+
+canvas.width = video.videoWidth
+canvas.height = video.videoHeight
+
+logMsg("Camera started")
+
+detectLoop()
+
+}
+
+}
+
+function detectLoop(){
+
+ctx.drawImage(video,0,0,canvas.width,canvas.height)
+
+let src = cv.imread(canvas)
+
+let markerCorners = new cv.MatVector()
+let markerIds = new cv.Mat()
+
+cv.aruco.detectMarkers(src,dictionary,markerCorners,markerIds,parameters)
+
+if(markerIds.rows > 0){
+
+cv.aruco.drawDetectedMarkers(src,markerCorners,markerIds)
+
+for(let i=0;i<markerIds.rows;i++){
+
+let id = markerIds.intAt(i,0)
+logMsg("Detected marker ID: "+id)
+
+}
+
+}
+
+cv.imshow(canvas,src)
+
+src.delete()
+markerCorners.delete()
+markerIds.delete()
+
+requestAnimationFrame(detectLoop)
+
+}
+
+</script>
 
 </body>
 </html>
