@@ -3,7 +3,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Monopoly Digital Twin</title>
+<title>Monopoly Digital Twin - Stable Mobile Version</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js"></script>
@@ -24,15 +24,7 @@ align-items:center;
 padding:10px;
 }
 
-video{
-width:95vw;
-max-width:480px;
-border:2px solid #444;
-border-radius:6px;
-margin-bottom:10px;
-}
-
-canvas{
+video, canvas{
 width:95vw;
 max-width:480px;
 border:2px solid #444;
@@ -41,13 +33,13 @@ margin-bottom:10px;
 }
 
 button{
-padding:12px 20px;
+padding:12px 18px;
 font-size:16px;
 border-radius:6px;
 border:none;
 background:#2ecc71;
 color:white;
-margin:10px;
+margin:6px;
 }
 
 #logs{
@@ -62,6 +54,11 @@ padding:8px;
 border:1px solid #333;
 text-align:left;
 }
+
+#instructions{
+font-size:13px;
+margin-bottom:6px;
+}
 </style>
 </head>
 
@@ -71,12 +68,14 @@ text-align:left;
 
 <h3>Monopoly Digital Twin</h3>
 
+<div id="instructions">Tap START CAMERA. Then tap the 4 board corners (TL → TR → BR → BL).</div>
+
 <button id="startBtn" disabled>Loading OpenCV...</button>
+<button id="resetBtn">Reset Calibration</button>
 
 <video id="video" autoplay playsinline></video>
 
 <canvas id="canvasOutput" width="640" height="480"></canvas>
-
 <canvas id="warpedCanvas" width="500" height="500"></canvas>
 
 <div id="logs"></div>
@@ -85,91 +84,129 @@ text-align:left;
 
 <script>
 
-let video=document.getElementById("video");
-let startBtn=document.getElementById("startBtn");
-let logs=document.getElementById("logs");
+let video=document.getElementById("video")
+let startBtn=document.getElementById("startBtn")
+let resetBtn=document.getElementById("resetBtn")
+let logs=document.getElementById("logs")
 
 function log(msg){
-console.log(msg);
-logs.innerHTML+=msg+"<br>";
-logs.scrollTop=logs.scrollHeight;
+console.log(msg)
+logs.innerHTML+=msg+"<br>"
+logs.scrollTop=logs.scrollHeight
 }
 
-let cap,frame,gray,warped,hsv,mask,contours,hierarchy;
-let dictionary,parameters,corners,ids;
+let cap,frame,warped,hsv,mask,contours,hierarchy
+let homography=null
+let calibrationPoints=[]
 
 function onOpenCvReady(){
-log("OpenCV loaded successfully");
-startBtn.disabled=false;
-startBtn.innerText="Start Camera";
+log("OpenCV ready")
+startBtn.disabled=false
+startBtn.innerText="Start Camera"
 }
 
-if(typeof cv !== "undefined"){
 if(cv.getBuildInformation){
-onOpenCvReady();
+onOpenCvReady()
 }else{
-cv['onRuntimeInitialized']=onOpenCvReady;
-}
-}else{
-log("Waiting for OpenCV...");
+cv["onRuntimeInitialized"]=onOpenCvReady
 }
 
-startBtn.onclick=startCamera;
+startBtn.onclick=startCamera
+resetBtn.onclick=()=>{
+localStorage.removeItem("boardHomography")
+location.reload()
+}
 
 function startCamera(){
 
-log("Starting camera...");
+log("Starting camera")
 
 navigator.mediaDevices.getUserMedia({
-video:{
-facingMode:{ideal:"environment"},
-width:{ideal:1280},
-height:{ideal:720}
-},
+video:{facingMode:{ideal:"environment"}},
 audio:false
-})
-.then(stream=>{
+}).then(stream=>{
 
-video.srcObject=stream;
-video.play();
+video.srcObject=stream
+video.play()
 
 video.onloadedmetadata=()=>{
 
-log("Camera metadata loaded");
+log("Camera ready")
 
-startVision();
-
-};
-
-})
-.catch(err=>log("Camera error: "+err));
+initVision()
 
 }
 
-function startVision(){
+}).catch(err=>log("Camera error "+err))
 
-log("Initializing vision pipeline");
+}
 
-cap=new cv.VideoCapture(video);
+function initVision(){
 
-frame=new cv.Mat(video.videoHeight,video.videoWidth,cv.CV_8UC4);
-gray=new cv.Mat();
+cap=new cv.VideoCapture(video)
 
-warped=new cv.Mat(500,500,cv.CV_8UC4);
+frame=new cv.Mat(video.videoHeight,video.videoWidth,cv.CV_8UC4)
+warped=new cv.Mat(500,500,cv.CV_8UC4)
 
-hsv=new cv.Mat();
-mask=new cv.Mat();
+hsv=new cv.Mat()
+mask=new cv.Mat()
 
-contours=new cv.MatVector();
-hierarchy=new cv.Mat();
+contours=new cv.MatVector()
+hierarchy=new cv.Mat()
 
-dictionary=new cv.aruco_Dictionary(cv.DICT_4X4_50);
-parameters=new cv.aruco_DetectorParameters();
+let stored=localStorage.getItem("boardHomography")
 
-corners=new cv.MatVector();
-ids=new cv.Mat();
+if(stored){
+homography=cv.matFromArray(3,3,cv.CV_64F,JSON.parse(stored))
+log("Loaded saved calibration")
+}
 
-process();
+process()
+
+}
+
+video.addEventListener("click",function(e){
+
+if(homography) return
+
+let rect=video.getBoundingClientRect()
+
+let x=(e.clientX-rect.left)/rect.width*video.videoWidth
+let y=(e.clientY-rect.top)/rect.height*video.videoHeight
+
+calibrationPoints.push([x,y])
+
+log("Corner "+calibrationPoints.length+" captured")
+
+if(calibrationPoints.length===4){
+
+computeHomography()
+
+}
+
+})
+
+function computeHomography(){
+
+let src=cv.matFromArray(4,1,cv.CV_32FC2,[
+calibrationPoints[0][0],calibrationPoints[0][1],
+calibrationPoints[1][0],calibrationPoints[1][1],
+calibrationPoints[2][0],calibrationPoints[2][1],
+calibrationPoints[3][0],calibrationPoints[3][1]
+])
+
+let dst=cv.matFromArray(4,1,cv.CV_32FC2,[
+0,0,
+500,0,
+500,500,
+0,500
+])
+
+homography=cv.getPerspectiveTransform(src,dst)
+
+localStorage.setItem("boardHomography",JSON.stringify(Array.from(homography.data64F)))
+
+log("Calibration saved")
 
 }
 
@@ -177,102 +214,57 @@ function process(){
 
 try{
 
-cap.read(frame);
+cap.read(frame)
 
-cv.cvtColor(frame,gray,cv.COLOR_RGBA2GRAY);
+if(homography){
 
-cv.aruco.detectMarkers(gray,dictionary,corners,ids,parameters);
+cv.warpPerspective(frame,warped,homography,new cv.Size(500,500))
 
-let boardCorners={};
+cv.imshow("warpedCanvas",warped)
 
-if(ids.rows>=4){
+cv.cvtColor(warped,hsv,cv.COLOR_RGBA2HSV)
 
-for(let i=0;i<ids.rows;i++){
+let lower=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[100,120,50,0])
+let upper=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[140,255,255,255])
 
-let id=ids.intAt(i,0);
-let marker=corners.get(i);
-let d=marker.data32F;
+cv.inRange(hsv,lower,upper,mask)
 
-if(id===0) boardCorners.tl=[d[0],d[1]];
-if(id===1) boardCorners.tr=[d[2],d[3]];
-if(id===2) boardCorners.br=[d[4],d[5]];
-if(id===3) boardCorners.bl=[d[6],d[7]];
-
-}
-
-if(boardCorners.tl && boardCorners.tr && boardCorners.br && boardCorners.bl){
-
-let src=cv.matFromArray(4,1,cv.CV_32FC2,[
-boardCorners.tl[0],boardCorners.tl[1],
-boardCorners.tr[0],boardCorners.tr[1],
-boardCorners.br[0],boardCorners.br[1],
-boardCorners.bl[0],boardCorners.bl[1]
-]);
-
-let dst=cv.matFromArray(4,1,cv.CV_32FC2,[
-0,0,
-500,0,
-500,500,
-0,500
-]);
-
-let M=cv.getPerspectiveTransform(src,dst);
-
-cv.warpPerspective(frame,warped,M,new cv.Size(500,500));
-
-cv.imshow("warpedCanvas",warped);
-
-cv.cvtColor(warped,hsv,cv.COLOR_RGBA2HSV);
-
-let lower=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[100,120,50,0]);
-let upper=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[140,255,255,255]);
-
-cv.inRange(hsv,lower,upper,mask);
-
-cv.findContours(mask,contours,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);
+cv.findContours(mask,contours,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE)
 
 if(contours.size()>0){
 
-let cnt=contours.get(0);
-let rect=cv.boundingRect(cnt);
+let cnt=contours.get(0)
+let rect=cv.boundingRect(cnt)
 
-let cx=rect.x+rect.width/2;
-let cy=rect.y+rect.height/2;
+let cx=rect.x+rect.width/2
+let cy=rect.y+rect.height/2
 
-let ctx=document.getElementById("warpedCanvas").getContext("2d");
+let ctx=document.getElementById("warpedCanvas").getContext("2d")
 
-ctx.strokeStyle="cyan";
-ctx.lineWidth=3;
-ctx.strokeRect(rect.x,rect.y,rect.width,rect.height);
+ctx.strokeStyle="cyan"
+ctx.lineWidth=3
+ctx.strokeRect(rect.x,rect.y,rect.width,rect.height)
 
-let square=-1;
+let square=-1
 
-if(cy>450) square=Math.floor((500-cx)/50);
-else if(cx<50) square=10+Math.floor((500-cy)/50);
-else if(cy<50) square=20+Math.floor(cx/50);
-else if(cx>450) square=30+Math.floor(cy/50);
+if(cy>450) square=Math.floor((500-cx)/50)
+else if(cx<50) square=10+Math.floor((500-cy)/50)
+else if(cy<50) square=20+Math.floor(cx/50)
+else if(cx>450) square=30+Math.floor(cy/50)
 
-log("Pawn "+cx.toFixed(0)+","+cy.toFixed(0)+" square:"+square);
-
-}
-
-src.delete();
-dst.delete();
-M.delete();
+log("Pawn "+cx.toFixed(0)+","+cy.toFixed(0)+" square:"+square)
 
 }
 
 }
 
-cv.imshow("canvasOutput",frame);
+cv.imshow("canvasOutput",frame)
 
 }catch(e){
-
-log("Vision error: "+e);
-
+log("Vision error "+e)
 }
 
-requestAnimationFrame(process);
+requestAnimationFrame(process)
 
 }
 
