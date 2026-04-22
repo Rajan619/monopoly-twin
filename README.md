@@ -2,6 +2,9 @@
 
 A real-time hybrid system that bridges a **physical Monopoly board** with a **digital Unreal Engine simulation**, using computer vision, state synchronization, and low-latency communication.
 
+## Demo
+Video demo here: https://youtu.be/2GvdDb1VBgk
+
 ## Overview
 
 This project explores how physical interactions can be captured, interpreted, and reflected inside a real-time 3D environment.
