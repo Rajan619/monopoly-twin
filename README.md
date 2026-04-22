@@ -55,7 +55,7 @@ Key design principles:
 
 ---
 
-## ⚙️ Tech Stack
+## Tech Stack
 
 * **Python** – Vision + server
 * **OpenCV** – Pawn detection & tracking
@@ -138,7 +138,7 @@ This project demonstrates:
 
 ---
 
-## 📬 Feedback / Collaboration
+## Feedback / Collaboration
 
 Open to discussions on:
 
