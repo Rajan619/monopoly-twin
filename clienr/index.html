@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Monopoly Tracker</title>
+
+<style>
+body {
+    background:#111;
+    color:white;
+    text-align:center;
+    font-family:Arial;
+}
+
+img {
+    width:900px;
+    max-width:95%;
+    border-radius:8px;
+}
+
+.controls {
+    margin-top:20px;
+}
+
+input {
+    width:300px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h2>Monopoly Tracker</h2>
+
+<img src="/video">
+
+<div class="controls">
+    <h3>Grid Calibration</h3>
+
+    <label>X Offset</label><br>
+    <input type="range" id="offsetX" min="-100" max="100" value="0"><br><br>
+
+    <label>Y Offset</label><br>
+    <input type="range" id="offsetY" min="-100" max="100" value="0"><br><br>
+
+    <label>Scale X</label><br>
+    <input type="range" id="scaleX" min="0.8" max="1.2" step="0.01" value="1"><br><br>
+
+    <label>Scale Y</label><br>
+    <input type="range" id="scaleY" min="0.8" max="1.2" step="0.01" value="1"><br>
+</div>
+
+<script>
+
+function sendTransform() {
+
+    const x  = document.getElementById("offsetX").value
+    const y  = document.getElementById("offsetY").value
+    const sx = document.getElementById("scaleX").value
+    const sy = document.getElementById("scaleY").value
+
+    fetch("/set_transform", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({x:x, y:y, sx:sx, sy:sy})
+    })
+}
+
+setInterval(sendTransform, 200)
+
+</script>
+
+</body>
+</html>
